@@ -1,0 +1,1681 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>대한민국 제7교도소 탈출 3D</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Tone.js for Sound Effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            user-select: none;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* HUD Overlay Crosshair */
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            background-color: rgba(255, 255, 255, 0.75);
+            border: 1px solid rgba(0, 0, 0, 0.6);
+            border-radius: 50%;
+            pointer-events: none;
+            transition: transform 0.12s ease, background-color 0.12s ease;
+        }
+
+        .crosshair.interactable {
+            transform: translate(-50%, -50%) scale(2.2);
+            background-color: #38bdf8;
+            border-color: #0284c7;
+        }
+
+        /* Retro CRT Scanlines Effect */
+        .scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="relative bg-black text-white overflow-hidden select-none">
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- CRT Overlay -->
+    <div class="scanlines absolute inset-0 z-10 pointer-events-none"></div>
+
+    <!-- HUD Layer -->
+    <div id="hud-layer" class="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-4 sm:p-6 hidden">
+        <!-- Top Status Bar -->
+        <div class="flex justify-between items-start">
+            <!-- Objective Box -->
+            <div class="bg-slate-900/85 backdrop-blur-md border border-slate-700/60 p-4 rounded-xl max-w-md pointer-events-auto shadow-2xl">
+                <div class="flex items-center space-x-2 text-red-500 font-bold text-xs tracking-wider uppercase mb-1">
+                    <span class="inline-block w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                    <span>대한민국 제7교도소 • 13동 수용동</span>
+                </div>
+                <h1 id="current-objective-title" class="text-lg font-extrabold text-slate-100">임무: 101호 배식구 열기</h1>
+                <p id="current-objective-desc" class="text-xs text-slate-400 mt-1">101호 문 하단의 [배식구]를 상호작용[E]하여 연 뒤, 아래 복도 바닥의 열쇠를 획득하세요.</p>
+            </div>
+
+            <!-- Stealth / Alert Bar -->
+            <div class="bg-slate-900/85 backdrop-blur-md border border-slate-700/60 p-3 rounded-xl flex flex-col items-end pointer-events-auto min-w-[200px]">
+                <div class="flex items-center space-x-2 mb-1">
+                    <i id="stealth-icon" class="fa-solid fa-shield-halved text-emerald-400 text-xs"></i>
+                    <span id="stealth-text" class="text-xs font-semibold text-emerald-400">안전함 (발각 0/2)</span>
+                </div>
+                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden border border-slate-700">
+                    <div id="alert-bar" class="bg-emerald-500 h-full w-0 transition-all duration-200"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Crosshair & Interaction Prompt -->
+        <div id="crosshair" class="crosshair"></div>
+        <div id="interaction-prompt" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 translate-y-8 bg-slate-900/90 border border-sky-500/60 text-sky-300 font-bold text-xs px-4 py-2 rounded-lg shadow-xl hidden pointer-events-none">
+            [E] 상호작용
+        </div>
+
+        <!-- Bottom Controls & Inventory -->
+        <div class="flex justify-between items-end">
+            <!-- Controls Guide -->
+            <div class="bg-slate-900/80 backdrop-blur-md border border-slate-800 p-3 rounded-xl text-xs text-slate-400 pointer-events-auto hidden sm:block">
+                <div class="flex space-x-4">
+                    <div><span class="text-sky-400 font-bold">WASD</span> 이동</div>
+                    <div><span class="text-sky-400 font-bold">Shift</span> 달리</div>
+                    <div><span class="text-sky-400 font-bold">Space</span> 점프</div>
+                    <div><span class="text-sky-400 font-bold">C</span> 은신(숙이기)</div>
+                    <div><span class="text-sky-400 font-bold">E / 클릭</span> 상호작용</div>
+                    <div><span class="text-sky-400 font-bold">F</span> 손전등</div>
+                </div>
+            </div>
+
+            <!-- Inventory List -->
+            <div class="bg-slate-900/85 backdrop-blur-md border border-slate-700/60 p-3 rounded-xl pointer-events-auto">
+                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center space-x-1">
+                    <i class="fa-solid fa-briefcase text-sky-400"></i>
+                    <span>보유 소지품</span>
+                </div>
+                <div id="inventory-list" class="flex space-x-2">
+                    <div class="w-10 h-10 border border-dashed border-slate-700 rounded-lg flex items-center justify-center text-slate-600 text-xs">비어있음</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start Screen Overlay -->
+    <div id="menu-overlay" class="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/90 backdrop-blur-lg p-4">
+        <div class="bg-slate-900 border border-slate-700/80 rounded-2xl p-6 sm:p-8 max-w-lg w-full text-center shadow-2xl space-y-6">
+            <div>
+                <div class="inline-flex items-center space-x-2 px-3 py-1 bg-red-950/80 border border-red-700/50 rounded-full text-red-400 text-xs font-semibold mb-3">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>3D 1인칭 교도소 탈출 시뮬레이션</span>
+                </div>
+                <h1 class="text-2xl sm:text-3xl font-black text-white tracking-tight">대한민국 제7교도소 탈출</h1>
+                <p class="text-xs sm:text-sm text-slate-400 mt-2">삼엄한 감시를 뚫고 13동 수용동과 야외 운동장을 탈출하세요.</p>
+            </div>
+
+            <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800 text-left space-y-2 text-xs text-slate-300">
+                <div class="font-bold text-sky-400 mb-1"><i class="fa-solid fa-compass mr-1"></i> 주요 목표:</div>
+                <p>1. 101호 하단 배식구[E]를 열어 복도 바닥의 [감방 열쇠] 획득</p>
+                <p>2. CCTV 경보망을 피해 보안실에서 [마스터 키카드] 획득</p>
+                <p>3. 야외 운동장 감시탑 탐조등을 피해 담장(Z=-83)으로 탈출</p>
+            </div>
+
+            <button id="start-btn" class="w-full py-4 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-extrabold rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2 text-base">
+                <i class="fa-solid fa-play"></i>
+                <span>탈출 시작하기</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Pause / Resume Overlay -->
+    <div id="pause-overlay" class="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-4 hidden cursor-pointer">
+        <div class="bg-slate-900 border border-sky-500/60 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl space-y-4 pointer-events-none">
+            <div class="w-14 h-14 bg-sky-950/80 border border-sky-500/50 rounded-full flex items-center justify-center mx-auto text-sky-400 text-2xl">
+                <i class="fa-solid fa-pause"></i>
+            </div>
+            <div>
+                <h2 class="text-xl font-extrabold text-white">일시 정지</h2>
+                <p class="text-xs text-sky-300 mt-1">화면을 다시 클릭하면 마우스 시점이 고정되고 게임이 재개됩니다.</p>
+            </div>
+            <div class="py-2 px-4 bg-sky-900/40 border border-sky-500/30 rounded-xl text-xs font-bold text-sky-200">
+                [ 화면 아무 곳이나 클릭하여 계속하기 ]
+            </div>
+        </div>
+    </div>
+
+    <!-- Trial / Court Sentencing Overlay (재판 및 징역 1년 추가) -->
+    <div id="trial-overlay" class="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/95 backdrop-blur-lg p-4 hidden">
+        <div class="bg-slate-900 border border-red-600/80 rounded-2xl p-6 sm:p-8 max-w-lg w-full text-center shadow-2xl space-y-6">
+            <div class="w-16 h-16 bg-red-950/80 border border-red-500 rounded-full flex items-center justify-center mx-auto text-red-500 text-3xl shadow-lg animate-pulse">
+                <i class="fa-solid fa-gavel"></i>
+            </div>
+            <div>
+                <div class="inline-block px-3 py-1 bg-red-950 border border-red-800 rounded-full text-[11px] font-bold text-red-400 tracking-wider mb-2">
+                    대한민국 지방법원 제3형사부 • 판결 선고
+                </div>
+                <h2 class="text-2xl font-black text-white">도주미수죄 판결: 징역 1년 추가</h2>
+                <p class="text-xs sm:text-sm text-slate-300 mt-3 leading-relaxed bg-slate-950 p-4 rounded-xl border border-slate-800 text-left">
+                    "수용번호 <span class="text-red-400 font-bold">1041번</span> 피고인은 제7교도소에서 보안 시스템 및 감시망을 무단 이탈하여 탈옥을 시도하다 교도관에게 현장 체포(수갑 및 나일론 포승줄 결박)되었습니다.<br><br>
+                    형법 제145조(도주미수)에 의하여 기존 형량에 <span class="text-red-400 font-extrabold text-sm">징역 1년이 추가 부과</span>되었으며, 중경비 수용동으로 이송됩니다."
+                </p>
+            </div>
+            <div class="flex space-x-3">
+                <button onclick="location.reload()" class="w-full py-3.5 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    <span>다시 탈출 시도하기</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div id="gameover-overlay" class="absolute inset-0 z-40 flex items-center justify-center bg-red-950/90 backdrop-blur-lg p-4 hidden">
+        <div class="bg-slate-900 border border-red-700/80 rounded-2xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-6">
+            <div class="w-16 h-16 bg-red-900/50 border border-red-500 rounded-full flex items-center justify-center mx-auto text-red-400 text-2xl">
+                <i class="fa-solid fa-handcuffs"></i>
+            </div>
+            <div>
+                <h2 class="text-2xl font-black text-white">탈출 실패!</h2>
+                <p id="gameover-reason" class="text-sm text-red-400 mt-2 font-medium">교도관에게 포획되었습니다.</p>
+            </div>
+            <button onclick="location.reload()" class="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all">
+                다시 시도하기
+            </button>
+        </div>
+    </div>
+
+    <!-- Win Overlay -->
+    <div id="win-overlay" class="absolute inset-0 z-40 flex items-center justify-center bg-emerald-950/90 backdrop-blur-lg p-4 hidden">
+        <div class="bg-slate-900 border border-emerald-600/80 rounded-2xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-6">
+            <div class="w-16 h-16 bg-emerald-900/50 border border-emerald-500 rounded-full flex items-center justify-center mx-auto text-emerald-400 text-3xl">
+                <i class="fa-solid fa-flag-checkered"></i>
+            </div>
+            <div>
+                <h2 class="text-2xl font-black text-white">탈출 성공!</h2>
+                <p class="text-sm text-emerald-400 mt-2 font-medium">감시탑의 탐조등을 뚫고 교도소 담장을 넘었습니다!</p>
+            </div>
+            <button onclick="location.reload()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all">
+                메인 화면으로
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast-msg" class="absolute bottom-20 left-1/2 transform -translate-x-1/2 bg-slate-900/90 border border-slate-700 text-slate-100 font-semibold text-xs px-5 py-2.5 rounded-xl shadow-2xl z-30 hidden pointer-events-none transition-all">
+    </div>
+
+    <script>
+        // --- GAME CONFIG & STATE ---
+        const CONFIG = {
+            playerHeight: 1.65,
+            crouchHeight: 0.9,
+            speed: 4.5,
+            crouchSpeed: 2.2,
+            sprintSpeed: 7.0,
+            interactDist: 3.6,
+            alertRate: 160
+        };
+
+        const STATE = {
+            isPlaying: false,
+            inventory: [],
+            foodSlotOpen: false,
+            hasCellKey: false,
+            hasMasterKey: false,
+            cellDoorUnlocked: false,
+            exitDoorUnlocked: false,
+            alertLevel: 0,
+            detectionStrikes: 0,
+            detectionCooldown: 0,
+            isCrouching: false,
+            flashlightOn: false,
+            // Cutscene & Arrest state
+            isCapturing: false,
+            captureStage: 0,
+            captureTimer: 0,
+            cuffSoundPlayed: false,
+            beltSoundPlayed: false,
+            tightenSoundPlayed: false
+        };
+
+        // --- PROCEDURAL AUDIO CONTROLLER ---
+        class SoundEngine {
+            constructor() {
+                this.initialized = false;
+                this.lastStepTime = 0;
+                this.lastPickupTime = 0;
+                this.lastDoorTime = 0;
+                this.lastCuffTime = 0;
+            }
+
+            async init() {
+                if (this.initialized) return;
+                try {
+                    await Tone.start();
+                    this.stepSynth = new Tone.NoiseSynth({
+                        noise: { type: 'pink' },
+                        envelope: { attack: 0.005, decay: 0.08, sustain: 0 }
+                    }).toDestination();
+                    this.stepSynth.volume.value = -20;
+
+                    this.pickupSynth = new Tone.Synth({
+                        oscillator: { type: 'sine' },
+                        envelope: { attack: 0.01, decay: 0.2, sustain: 0 }
+                    }).toDestination();
+
+                    this.doorSynth = new Tone.MetalSynth({
+                        frequency: 120,
+                        envelope: { attack: 0.01, decay: 0.4, release: 0.2 },
+                        harmonicity: 3.0,
+                        modulationIndex: 14
+                    }).toDestination();
+                    this.doorSynth.volume.value = -14;
+
+                    this.cuffSynth = new Tone.MetalSynth({
+                        frequency: 300,
+                        envelope: { attack: 0.005, decay: 0.15, release: 0.1 },
+                        harmonicity: 5.0,
+                        modulationIndex: 20
+                    }).toDestination();
+                    this.cuffSynth.volume.value = -8;
+
+                    this.initialized = true;
+                } catch (e) {
+                    console.warn("Tone.js Audio Init Warning:", e);
+                }
+            }
+
+            playStep() {
+                if (!this.initialized) return;
+                try {
+                    const now = Tone.now();
+                    if (now > this.lastStepTime + 0.12) {
+                        this.stepSynth.triggerAttackRelease("16n", now);
+                        this.lastStepTime = now;
+                    }
+                } catch (e) {}
+            }
+
+            playPickup() {
+                if (!this.initialized) return;
+                try {
+                    const now = Tone.now();
+                    if (now > this.lastPickupTime + 0.1) {
+                        this.pickupSynth.triggerAttackRelease("G5", "8n", now);
+                        this.lastPickupTime = now;
+                    }
+                } catch (e) {}
+            }
+
+            playDoor() {
+                if (!this.initialized) return;
+                try {
+                    const now = Tone.now();
+                    if (now > this.lastDoorTime + 0.1) {
+                        this.doorSynth.triggerAttackRelease("16n", now);
+                        this.lastDoorTime = now;
+                    }
+                } catch (e) {}
+            }
+
+            playCuff() {
+                if (!this.initialized) return;
+                try {
+                    const now = Tone.now();
+                    if (now > this.lastCuffTime + 0.1) {
+                        this.cuffSynth.triggerAttackRelease("16n", now);
+                        this.lastCuffTime = now;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        const audio = new SoundEngine();
+
+        // --- PROCEDURAL TEXTURES GENERATOR ---
+        function generateCanvasTexture(type, text = "") {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            if (type === 'concrete') {
+                ctx.fillStyle = '#475569';
+                ctx.fillRect(0, 0, 512, 512);
+                for (let i = 0; i < 30000; i++) {
+                    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+                    ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+                }
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(0, 450, 512, 62);
+            } else if (type === 'floor') {
+                ctx.fillStyle = '#163828';
+                ctx.fillRect(0, 0, 512, 512);
+                ctx.strokeStyle = '#0e2419';
+                ctx.lineWidth = 10;
+                ctx.strokeRect(0, 0, 512, 512);
+                ctx.beginPath();
+                ctx.moveTo(256, 0); ctx.lineTo(256, 512);
+                ctx.moveTo(0, 256); ctx.lineTo(512, 256);
+                ctx.stroke();
+            } else if (type === 'sign') {
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, 512, 256);
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 14;
+                ctx.strokeRect(10, 10, 492, 236);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 48px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(text || '통 제 구 역', 256, 110);
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '24px sans-serif';
+                ctx.fillText('RESTRICTED AREA', 256, 170);
+            } else if (type === 'door_number') {
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(0, 0, 256, 256);
+                ctx.fillStyle = '#f8fafc';
+                ctx.font = 'bold 90px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(text, 128, 160);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            return texture;
+        }
+
+        const TEXTURES = {
+            concrete: generateCanvasTexture('concrete'),
+            floor: generateCanvasTexture('floor'),
+            sign: generateCanvasTexture('sign', '제13수용동 - 통제구역'),
+            securitySign: generateCanvasTexture('sign', '보안 담당주임실'),
+            door101: generateCanvasTexture('door_number', '101'),
+            door102: generateCanvasTexture('door_number', '102'),
+            door103: generateCanvasTexture('door_number', '103'),
+            door104: generateCanvasTexture('door_number', '104'),
+            door105: generateCanvasTexture('door_number', '105'),
+            door106: generateCanvasTexture('door_number', '106')
+        };
+        TEXTURES.concrete.repeat.set(2, 1);
+        TEXTURES.floor.repeat.set(4, 24);
+
+        // --- INMATE NPC MODEL BUILDER ---
+        function createInmateMesh(inmateNumStr, roomBadgeStr = "13동-2") {
+            const group = new THREE.Group();
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xd2b48c, roughness: 0.6 });
+            const hairMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.9 });
+            const uniformMat = new THREE.MeshStandardMaterial({ color: 0x1d3557, roughness: 0.7 });
+            const pantsMat = new THREE.MeshStandardMaterial({ color: 0x15263d, roughness: 0.8 });
+
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.3, 0.28), skinMat);
+            head.position.y = 1.45;
+            const hair = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.3), hairMat);
+            hair.position.y = 1.62;
+            group.add(head, hair);
+
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.6, 0.25), uniformMat);
+            torso.position.y = 1.0;
+            group.add(torso);
+
+            // Left Chest Inmate Number Badge
+            const canvasNum = document.createElement('canvas');
+            canvasNum.width = 128; canvasNum.height = 64;
+            const ctxNum = canvasNum.getContext('2d');
+            ctxNum.fillStyle = '#f8fafc'; ctxNum.fillRect(0, 0, 128, 64);
+            ctxNum.strokeStyle = '#000000'; ctxNum.lineWidth = 4; ctxNum.strokeRect(0, 0, 128, 64);
+            ctxNum.fillStyle = '#000000'; ctxNum.font = 'bold 36px sans-serif'; ctxNum.textAlign = 'center';
+            ctxNum.fillText(inmateNumStr, 64, 46);
+            const numBadge = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.14, 0.07),
+                new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvasNum) })
+            );
+            numBadge.position.set(0.11, 1.12, 0.13);
+            group.add(numBadge);
+
+            // Right Chest Room Badge ('13동-2' style)
+            const canvasRoom = document.createElement('canvas');
+            canvasRoom.width = 128; canvasRoom.height = 64;
+            const ctxRoom = canvasRoom.getContext('2d');
+            ctxRoom.fillStyle = '#ffffff'; ctxRoom.fillRect(0, 0, 128, 64);
+            ctxRoom.strokeStyle = '#000000'; ctxRoom.lineWidth = 4; ctxRoom.strokeRect(0, 0, 128, 64);
+            ctxRoom.fillStyle = '#1e3a8a'; ctxRoom.font = 'bold 30px sans-serif'; ctxRoom.textAlign = 'center';
+            ctxRoom.fillText(roomBadgeStr, 64, 44);
+            const roomBadge = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.14, 0.07),
+                new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvasRoom) })
+            );
+            roomBadge.position.set(-0.11, 1.12, 0.13);
+            group.add(roomBadge);
+
+            // Arms & Legs
+            const leftArmGroup = new THREE.Group();
+            leftArmGroup.position.set(-0.27, 1.25, 0);
+            const leftArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.12), uniformMat);
+            leftArmMesh.position.y = -0.275;
+            leftArmGroup.add(leftArmMesh);
+            group.add(leftArmGroup);
+
+            const rightArmGroup = new THREE.Group();
+            rightArmGroup.position.set(0.27, 1.25, 0);
+            const rightArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.12), uniformMat);
+            rightArmMesh.position.y = -0.275;
+            rightArmGroup.add(rightArmMesh);
+            group.add(rightArmGroup);
+
+            const leftLegGroup = new THREE.Group();
+            leftLegGroup.position.set(-0.12, 0.7, 0);
+            const leftLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.65, 0.14), pantsMat);
+            leftLegMesh.position.y = -0.325;
+            leftLegGroup.add(leftLegMesh);
+            group.add(leftLegGroup);
+
+            const rightLegGroup = new THREE.Group();
+            rightLegGroup.position.set(0.12, 0.7, 0);
+            const rightLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.65, 0.14), pantsMat);
+            rightLegMesh.position.y = -0.325;
+            rightLegGroup.add(rightLegMesh);
+            group.add(rightLegGroup);
+
+            return { group, leftArmGroup, rightArmGroup, leftLegGroup, rightLegGroup };
+        }
+
+        // --- PRISON GUARD NPC BUILDER ---
+        function createGuardMesh() {
+            const group = new THREE.Group();
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xd2b48c, roughness: 0.6 });
+            const uniformMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 }); // Dark navy guard uniform
+            const beltMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3 });
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.9 });
+
+            // Head & Guard Cap
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.3, 0.28), skinMat);
+            head.position.y = 1.45;
+            const capBase = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.12, 16), uniformMat);
+            capBase.position.y = 1.63;
+            const capVisor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.14), beltMat);
+            capVisor.position.set(0, 1.6, 0.14);
+            const badge = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.02), goldMat);
+            badge.position.set(0, 1.65, 0.12);
+            group.add(head, capBase, capVisor, badge);
+
+            // Torso & Belt
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.26), uniformMat);
+            torso.position.y = 1.0;
+            const belt = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.08, 0.28), beltMat);
+            belt.position.y = 0.72;
+            group.add(torso, belt);
+
+            // Arms & Legs
+            const leftArmGroup = new THREE.Group();
+            leftArmGroup.position.set(-0.29, 1.25, 0);
+            const leftArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.55, 0.13), uniformMat);
+            leftArmMesh.position.y = -0.275;
+            leftArmGroup.add(leftArmMesh);
+            group.add(leftArmGroup);
+
+            const rightArmGroup = new THREE.Group();
+            rightArmGroup.position.set(0.29, 1.25, 0);
+            const rightArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.55, 0.13), uniformMat);
+            rightArmMesh.position.y = -0.275;
+            rightArmGroup.add(rightArmMesh);
+            group.add(rightArmGroup);
+
+            const leftLegGroup = new THREE.Group();
+            leftLegGroup.position.set(-0.13, 0.7, 0);
+            const leftLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.65, 0.15), uniformMat);
+            leftLegMesh.position.y = -0.325;
+            leftLegGroup.add(leftLegMesh);
+            group.add(leftLegGroup);
+
+            const rightLegGroup = new THREE.Group();
+            rightLegGroup.position.set(0.13, 0.7, 0);
+            const rightLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.65, 0.15), uniformMat);
+            rightLegMesh.position.y = -0.325;
+            rightLegGroup.add(rightLegMesh);
+            group.add(rightLegGroup);
+
+            return { group, leftArmGroup, rightArmGroup, leftLegGroup, rightLegGroup };
+        }
+
+        // --- 3D PRISON WORLD CLASS ---
+        class PrisonWorld {
+            constructor(scene) {
+                this.scene = scene;
+                this.interactables = [];
+                this.colliders = [];
+                this.cameras = [];
+                this.inmates = [];
+                this.cell101DoorBBox = null;
+                this.guardNPC = null;
+                this.playerBodyGroup = null;
+                this.restraintProps = null;
+
+                this.buildWorld();
+                this.createPlayerBoundProps();
+            }
+
+            createPlayerBoundProps() {
+                // 1. Create 3D Player Character Body (Inmate 1041)
+                this.playerBodyGroup = createInmateMesh("1041", "13동-1");
+                this.playerBodyGroup.group.visible = false;
+                this.scene.add(this.playerBodyGroup.group);
+
+                // 2. Modern Korean Belt & Cuff Restraint System (사진 우측 벨트형 포승 장비 고증)
+                const propGroup = new THREE.Group();
+                const metalMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.95, roughness: 0.15 });
+                const beltMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.45 }); // Metallic Grey Fabric Belt
+
+                // Sub-groups for step-by-step binding animations
+                const beltGroup = new THREE.Group();
+                const strapGroup = new THREE.Group();
+                const cuffGroup = new THREE.Group();
+
+                // Wide Waist Belt (허리 포승 벨트)
+                const waistBelt = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.29), beltMat);
+                waistBelt.position.y = 0.78;
+                const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.04), metalMat);
+                buckle.position.set(0, 0.78, 0.15);
+                beltGroup.add(waistBelt, buckle);
+
+                // Upper Arm Restraint Straps (양팔 상단 포승 띠)
+                const strapL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.16), beltMat);
+                strapL.position.set(-0.27, 1.15, 0);
+                const strapR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.16), beltMat);
+                strapR.position.set(0.27, 1.15, 0);
+                strapGroup.add(strapL, strapR);
+
+                // Front Steel Handcuffs (손목 위치에 맞춘 수갑: Y=0.92, Z=0.32)
+                const cuffL = new THREE.Mesh(new THREE.TorusGeometry(0.065, 0.015, 8, 16), metalMat);
+                cuffL.position.set(-0.08, 0.92, 0.32);
+                const cuffR = new THREE.Mesh(new THREE.TorusGeometry(0.065, 0.015, 8, 16), metalMat);
+                cuffR.position.set(0.08, 0.92, 0.32);
+                const chain = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.015, 0.015), metalMat);
+                chain.position.set(0, 0.92, 0.32);
+
+                // Connecting vertical belt strap from waist to handcuffs
+                const connStrap = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.02), beltMat);
+                connStrap.position.set(0, 0.85, 0.24);
+                cuffGroup.add(cuffL, cuffR, chain, connStrap);
+
+                propGroup.add(beltGroup, strapGroup, cuffGroup);
+
+                this.beltGroup = beltGroup;
+                this.strapGroup = strapGroup;
+                this.cuffGroup = cuffGroup;
+
+                this.beltGroup.visible = false;
+                this.strapGroup.visible = false;
+                this.cuffGroup.visible = false;
+
+                propGroup.visible = false;
+                // Attach restraint props directly to Player Body
+                this.playerBodyGroup.group.add(propGroup);
+                this.restraintProps = propGroup;
+            }
+
+            spawnArrestGuard(playerPos) {
+                if (!this.guardNPC) {
+                    this.guardNPC = createGuardMesh();
+                    this.scene.add(this.guardNPC.group);
+                }
+                // Spawn guard further away (8.5m) to allow a longer running sequence
+                const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerPos.yaw || 0);
+                const spawnPos = playerPos.clone().add(forward.multiplyScalar(8.5));
+                this.guardNPC.group.position.set(spawnPos.x, 0, spawnPos.z);
+                this.guardNPC.animTime = 0;
+            }
+
+            buildWorld() {
+                const ambient = new THREE.AmbientLight(0xdbeafe, 0.3);
+                this.scene.add(ambient);
+
+                const wallMat = new THREE.MeshStandardMaterial({ map: TEXTURES.concrete, roughness: 0.8 });
+                const floorMat = new THREE.MeshStandardMaterial({ map: TEXTURES.floor, roughness: 0.45 });
+                const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+                const metalMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.3 });
+                const barMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
+
+                // Main Corridor (Width 4m, Length 65m)
+                const corridorW = 4;
+                const corridorH = 3.5;
+                const corridorL = 65;
+
+                const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(corridorW, corridorL), floorMat);
+                floorMesh.rotation.x = -Math.PI / 2;
+                floorMesh.position.set(0, 0, -2.5);
+                this.scene.add(floorMesh);
+
+                const ceilMesh = new THREE.Mesh(new THREE.PlaneGeometry(corridorW, corridorL), ceilingMat);
+                ceilMesh.rotation.x = Math.PI / 2;
+                ceilMesh.position.set(0, corridorH, -2.5);
+                this.scene.add(ceilMesh);
+
+                // Hallway Lights
+                for (let z = 25; z >= -30; z -= 8) {
+                    const fixture = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.4, 0.1, 2.2),
+                        new THREE.MeshBasicMaterial({ color: 0xf8fafc })
+                    );
+                    fixture.position.set(0, corridorH - 0.05, z);
+                    this.scene.add(fixture);
+
+                    const light = new THREE.PointLight(0xf1f5f9, 0.75, 12);
+                    light.position.set(0, corridorH - 0.3, z);
+                    this.scene.add(light);
+                }
+
+                // Walls with Door Cutouts
+                // Left Wall Cutouts (X = -2): Cell 101 (Z=25.2), Cell 102 (Z=15.2), Cell 103 (Z=5.2), Cell 104 (Z=-4.8)
+                this.createWall(-2, 1.75, 28.2, 0.2, 3.5, 3.6, wallMat);
+                this.createWall(-2, 3.0, 25.2, 0.2, 1.0, 2.4, wallMat);
+                this.createWall(-2, 1.75, 20.2, 0.2, 3.5, 7.6, wallMat);
+                this.createWall(-2, 3.0, 15.2, 0.2, 1.0, 2.4, wallMat);
+                this.createWall(-2, 1.75, 10.2, 0.2, 3.5, 7.6, wallMat);
+                this.createWall(-2, 3.0, 5.2, 0.2, 1.0, 2.4, wallMat);
+                this.createWall(-2, 1.75, 0.2, 0.2, 3.5, 7.6, wallMat);
+                this.createWall(-2, 3.0, -4.8, 0.2, 1.0, 2.4, wallMat);
+                this.createWall(-2, 1.75, -19.8, 0.2, 3.5, 27.6, wallMat);
+
+                // Right Wall Cutouts (X = 2): Cell 105 (Z=21.2), Cell 106 (Z=11.2), Security (Z=-14.8)
+                this.createWall(2, 1.75, 26.2, 0.2, 3.5, 7.6, wallMat);
+                this.createWall(2, 3.0, 21.2, 0.2, 1.0, 2.4, wallMat);
+                this.createWall(2, 1.75, 16.2, 0.2, 3.5, 7.6, wallMat);
+                this.createWall(2, 3.0, 11.2, 0.2, 1.0, 2.4, wallMat);
+                this.createWall(2, 1.75, -1.2, 0.2, 3.5, 22.4, wallMat);
+                this.createWall(2, 3.0, -14.8, 0.2, 1.0, 2.4, wallMat);
+                this.createWall(2, 1.75, -25.4, 0.2, 3.5, 18.8, wallMat);
+
+                this.createWall(0, 1.75, 30, corridorW, 3.5, 0.2, wallMat);
+
+                // Build Rooms
+                this.buildCell101(wallMat, floorMat, metalMat, barMat);
+                this.buildDecorativeCell(-2, 15.2, "102호", TEXTURES.door102, barMat, wallMat, floorMat, "2408", "13동-2");
+                this.buildDecorativeCell(-2, 5.2, "103호", TEXTURES.door103, barMat, wallMat, floorMat, "1052", "13동-3");
+                this.buildDecorativeCell(-2, -4.8, "104호", TEXTURES.door104, barMat, wallMat, floorMat, "0741", "13동-4");
+                this.buildDecorativeCell(2, 21.2, "105호", TEXTURES.door105, barMat, wallMat, floorMat, "3319", "13동-5");
+                this.buildDecorativeCell(2, 11.2, "106호", TEXTURES.door106, barMat, wallMat, floorMat, "5109", "13동-6");
+
+                this.buildSecurityOffice(wallMat, floorMat, metalMat);
+                this.buildExitGate(barMat, metalMat);
+                this.buildOutdoorYard(wallMat);
+
+                // Cameras (180도 반대 방향을 바라보도록 rotY + Math.PI 적용)
+                this.createCamera(1.8, 3.2, 18, Math.PI / 4 + Math.PI);
+                this.createCamera(-1.8, 3.2, 2, -Math.PI / 4 + Math.PI);
+                this.createCamera(1.8, 3.2, -10, Math.PI / 3 + Math.PI);
+                this.createCamera(-1.8, 3.2, -22, -Math.PI / 3 + Math.PI);
+
+                // Signboard
+                const signMesh = new THREE.Mesh(
+                    new THREE.PlaneGeometry(2.4, 0.9),
+                    new THREE.MeshBasicMaterial({ map: TEXTURES.sign, side: THREE.DoubleSide })
+                );
+                signMesh.position.set(0, 2.7, 28.5);
+                this.scene.add(signMesh);
+            }
+
+            createWall(x, y, z, w, h, d, material) {
+                const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+                wall.position.set(x, y, z);
+                this.scene.add(wall);
+                this.colliders.push(new THREE.Box3().setFromObject(wall));
+                return wall;
+            }
+
+            createKoreanCellDoor(x, z, roomTexture, isCell101 = false) {
+                const doorGroup = new THREE.Group();
+                const doorPanelMat = new THREE.MeshStandardMaterial({ color: 0xf5e6d3, roughness: 0.65 });
+                const frameTrimMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.85, roughness: 0.25 });
+                const yellowBarMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.3, metalness: 0.85 });
+                const lockBoxMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.7 });
+                const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.6 });
+
+                // Door Frame (문틀) at Wall Opening
+                const fLeft = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.7, 0.12), doorFrameMat);
+                fLeft.position.set(x, 1.35, z + 1.18);
+                const fRight = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.7, 0.12), doorFrameMat);
+                fRight.position.set(x, 1.35, z - 1.18);
+                const fTop = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.3, 2.48), doorFrameMat);
+                fTop.position.set(x, 2.85, z);
+                this.scene.add(fLeft, fRight, fTop);
+
+                // Door Panel Mesh Sections
+                const panelBottom = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 2.36), doorPanelMat);
+                panelBottom.position.set(0, 0.3, -1.18);
+
+                const panelMiddle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 2.36), doorPanelMat);
+                panelMiddle.position.set(0, 1.3, -1.18);
+
+                const panelTop = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.55, 2.36), doorPanelMat);
+                panelTop.position.set(0, 2.425, -1.18);
+
+                const panelSideLeft = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.55, 0.78), doorPanelMat);
+                panelSideLeft.position.set(0, 1.375, -0.39);
+
+                const panelSideRight = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.55, 0.78), doorPanelMat);
+                panelSideRight.position.set(0, 1.375, -1.97);
+
+                doorGroup.add(panelBottom, panelMiddle, panelTop, panelSideLeft, panelSideRight);
+
+                // Upper Window Trim & Vertical Yellow Bars (상단 투시 쇠창살)
+                const winBorderTop = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.82), frameTrimMat);
+                winBorderTop.position.set(0, 2.13, -1.18);
+                const winBorderBot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.82), frameTrimMat);
+                winBorderBot.position.set(0, 1.62, -1.18);
+                const winBorderL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.56, 0.05), frameTrimMat);
+                winBorderL.position.set(0, 1.875, -0.77);
+                const winBorderR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.56, 0.05), frameTrimMat);
+                winBorderR.position.set(0, 1.875, -1.59);
+                doorGroup.add(winBorderTop, winBorderBot, winBorderL, winBorderR);
+
+                for (let bz = -1.51; bz <= -0.85; bz += 0.11) {
+                    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.52, 12), yellowBarMat);
+                    bar.position.set(0, 1.875, bz);
+                    doorGroup.add(bar);
+                }
+
+                // Oval Room Badge
+                const badgeGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.04, 16);
+                badgeGeo.scale(1, 1, 0.65);
+                const badge = new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: roomTexture }));
+                badge.rotation.z = Math.PI / 2;
+                badge.position.set(x < 0 ? 0.06 : -0.06, 2.26, -1.18);
+                doorGroup.add(badge);
+
+                // Lock box
+                const lockBox = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.35, 0.32), lockBoxMat);
+                lockBox.position.set(x < 0 ? 0.06 : -0.06, 1.35, -2.15);
+                doorGroup.add(lockBox);
+
+                // Hatch Group (배식구 덮개)
+                const hatchGroup = new THREE.Group();
+                const hatchPanel = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.12, 0.42, 0.84),
+                    new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.4, metalness: 0.7 })
+                );
+                hatchPanel.position.set(0, -0.21, 0);
+                hatchGroup.add(hatchPanel);
+                hatchGroup.position.set(0, 1.0, -1.18);
+                doorGroup.add(hatchGroup);
+
+                doorGroup.position.set(x, 0, z + 1.18);
+                this.scene.add(doorGroup);
+
+                return { doorGroup, panelMiddle, hatchPanel, hatchGroup };
+            }
+
+            buildCell101(wallMat, floorMat, metalMat, barMat) {
+                const floor = new THREE.Mesh(new THREE.PlaneGeometry(4, 5), floorMat);
+                floor.rotation.x = -Math.PI / 2;
+                floor.position.set(-4, 0, 25.5);
+                this.scene.add(floor);
+
+                this.createWall(-4, 1.75, 28, 4, 3.5, 0.2, wallMat);
+                this.createWall(-6, 1.75, 25.5, 0.2, 3.5, 5, wallMat);
+                this.createWall(-4, 1.75, 23, 4, 3.5, 0.2, wallMat);
+
+                const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.4, 2.2), metalMat);
+                bedFrame.position.set(-5.3, 0.2, 26.5);
+                this.scene.add(bedFrame);
+                this.colliders.push(new THREE.Box3().setFromObject(bedFrame));
+
+                // Key lying on corridor floor outside (Y = 0.04)
+                const keyGroup = new THREE.Group();
+                const ring = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.12, 0.028, 8, 16),
+                    new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.95, roughness: 0.1, emissive: 0x854d0e })
+                );
+                const stem = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.024, 0.024, 0.32, 8),
+                    new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.95, roughness: 0.1, emissive: 0x854d0e })
+                );
+                stem.position.set(0, -0.18, 0);
+                keyGroup.add(ring, stem);
+                keyGroup.position.set(-1.3, 0.04, 25.25);
+                keyGroup.rotation.x = Math.PI / 2;
+                this.scene.add(keyGroup);
+
+                const keyLight = new THREE.PointLight(0xfacc15, 2.0, 3.5);
+                keyLight.position.set(-1.3, 0.4, 25.25);
+                this.scene.add(keyLight);
+
+                this.interactables.push({
+                    mesh: keyGroup,
+                    name: "감방 열쇠 (Cell Key)",
+                    action: () => {
+                        if (!STATE.foodSlotOpen) {
+                            showToast("101호 문 하단의 배식구를 먼저 열어야 손이 닿습니다!");
+                            return;
+                        }
+                        STATE.hasCellKey = true;
+                        STATE.inventory.push("감방 열쇠");
+                        audio.playPickup();
+                        this.scene.remove(keyGroup);
+                        this.scene.remove(keyLight);
+                        updateHUDObjective("101호 문 해제", "획득한 감방 열쇠로 101호 문[E]을 열고 복도로 나가세요.");
+                        updateInventoryUI();
+                    }
+                });
+
+                // Build Korean Cell 101 Door using unified method
+                const cellDoor = this.createKoreanCellDoor(-2, 25.2, TEXTURES.door101, true);
+
+                this.interactables.push({
+                    mesh: cellDoor.hatchPanel,
+                    name: "101호 문 배식구 (식구)",
+                    action: () => {
+                        if (STATE.foodSlotOpen) return;
+                        STATE.foodSlotOpen = true;
+                        audio.playDoor();
+                        // 180-degree Full Flip Open Animation
+                        cellDoor.hatchGroup.rotation.z = Math.PI;
+                        showToast("배식구가 180도 뒤집혀 열렸습니다! 아래 복도 바닥의 열쇠를 집으세요.");
+                        updateHUDObjective("배식구 바닥 열쇠 획득", "열린 배식구 아래 복도 바닥의 [감방 열쇠]를 획득하세요.");
+                    }
+                });
+
+                // Bounding Box for Cell 101 Door Collision
+                this.cell101DoorBBox = new THREE.Box3().setFromObject(cellDoor.doorGroup);
+                this.colliders.push(this.cell101DoorBBox);
+
+                // Cell 101 Door Interaction
+                this.interactables.push({
+                    mesh: cellDoor.panelMiddle,
+                    name: "101호 감방 문",
+                    action: () => {
+                        if (STATE.cellDoorUnlocked) return;
+                        if (!STATE.hasCellKey) {
+                            showToast("문이 잠겨 있습니다. 하단 배식구를 열고 복도 바닥의 열쇠를 집으세요.");
+                            return;
+                        }
+                        STATE.cellDoorUnlocked = true;
+                        audio.playDoor();
+                        // Hinged swing open outwards towards corridor
+                        cellDoor.doorGroup.rotation.y = -Math.PI / 1.8;
+                        // Instantly clear collision box so player can walk through
+                        const idx = this.colliders.indexOf(this.cell101DoorBBox);
+                        if (idx !== -1) this.colliders.splice(idx, 1);
+                        showToast("101호 문이 열렸습니다. CCTV를 피해 복도로 나가세요.");
+                        updateHUDObjective("보안실 침입", "복도 끝 보안 담당주임실에서 [마스터 키카드]를 획득하세요.");
+                    }
+                });
+            }
+
+            buildDecorativeCell(x, z, roomTitle, doorTexture, barMat, wallMat, floorMat, inmateNumStr, roomBadgeStr) {
+                const floor = new THREE.Mesh(new THREE.PlaneGeometry(4, 5), floorMat);
+                floor.rotation.x = -Math.PI / 2;
+                const signX = x < 0 ? -4 : 4;
+                floor.position.set(signX, 0, z);
+                this.scene.add(floor);
+
+                // Illuminated Interior PointLight
+                const roomLight = new THREE.PointLight(0xfef08a, 1.2, 8);
+                roomLight.position.set(signX, 3.0, z);
+                this.scene.add(roomLight);
+
+                const wallSign = x < 0 ? -1 : 1;
+                this.createWall(signX, 1.75, z + 2.5, 4, 3.5, 0.2, wallMat);
+                this.createWall(signX, 1.75, z - 2.5, 4, 3.5, 0.2, wallMat);
+                this.createWall(signX + (wallSign * 2), 1.75, z, 0.2, 3.5, 5, wallMat);
+
+                // Animated Inmate NPC
+                const inmate = createInmateMesh(inmateNumStr, roomBadgeStr);
+                inmate.group.position.set(signX, 0, z);
+                this.scene.add(inmate.group);
+                this.inmates.push({
+                    meshGroup: inmate,
+                    basePos: new THREE.Vector3(signX, 0, z),
+                    targetPos: new THREE.Vector3(signX, 0, z),
+                    timer: Math.random() * 5
+                });
+
+                // Locked Korean Cell Door with matching high-detail model
+                const cellDoor = this.createKoreanCellDoor(x, z, doorTexture, false);
+                this.colliders.push(new THREE.Box3().setFromObject(cellDoor.doorGroup));
+            }
+
+            buildSecurityOffice(wallMat, floorMat, metalMat) {
+                const floor = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), floorMat);
+                floor.rotation.x = -Math.PI / 2;
+                floor.position.set(4.5, 0, -14.8);
+                this.scene.add(floor);
+
+                this.createWall(4.5, 1.75, -12.3, 5, 3.5, 0.2, wallMat);
+                this.createWall(4.5, 1.75, -17.3, 5, 3.5, 0.2, wallMat);
+                this.createWall(7.0, 1.75, -14.8, 0.2, 3.5, 5.2, wallMat);
+
+                const desk = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.8, 1.0), metalMat);
+                desk.position.set(5.2, 0.4, -14.8);
+                this.scene.add(desk);
+                this.colliders.push(new THREE.Box3().setFromObject(desk));
+
+                // Glowing Master Keycard
+                const keycard = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.25, 0.02, 0.4),
+                    new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.8, roughness: 0.2, emissive: 0x0369a1 })
+                );
+                keycard.position.set(5.2, 0.82, -14.8);
+                this.scene.add(keycard);
+
+                const cardLight = new THREE.PointLight(0x38bdf8, 1.8, 3.0);
+                cardLight.position.set(5.2, 1.2, -14.8);
+                this.scene.add(cardLight);
+
+                this.interactables.push({
+                    mesh: keycard,
+                    name: "마스터 키카드",
+                    action: () => {
+                        if (STATE.hasMasterKey) return;
+                        STATE.hasMasterKey = true;
+                        STATE.inventory.push("마스터 키카드");
+                        audio.playPickup();
+                        this.scene.remove(keycard);
+                        this.scene.remove(cardLight);
+                        showToast("보안 마스터 키카드를 획득했습니다! 복도 끝 비상구로 이동하세요.");
+                        updateHUDObjective("야외 운동장 탈출", "복도 끝 비상구 문[E]을 마스터 키카드로 열고 감시탑 조명을 피해 탈출하세요.");
+                        updateInventoryUI();
+                    }
+                });
+
+                const signMesh = new THREE.Mesh(
+                    new THREE.PlaneGeometry(1.8, 0.6),
+                    new THREE.MeshBasicMaterial({ map: TEXTURES.securitySign, side: THREE.DoubleSide })
+                );
+                signMesh.position.set(1.9, 2.5, -14.8);
+                signMesh.rotation.y = Math.PI / 2;
+                this.scene.add(signMesh);
+            }
+
+            buildExitGate(barMat, metalMat) {
+                const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.8 });
+                const gateGroup = new THREE.Group();
+
+                const fLeft = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.5, 0.2), doorFrameMat);
+                fLeft.position.set(-1.9, 1.75, 0);
+                const fRight = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.5, 0.2), doorFrameMat);
+                fRight.position.set(1.9, 1.75, 0);
+                const fTop = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.3, 0.2), doorFrameMat);
+                fTop.position.set(0, 3.35, 0);
+                gateGroup.add(fLeft, fRight, fTop);
+
+                // Right-side hinged door pivot
+                const doorPivot = new THREE.Group();
+                doorPivot.position.set(1.8, 0, 0);
+
+                const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(3.6, 3.2, 0.1), doorFrameMat);
+                doorMesh.position.set(-1.8, 1.6, 0);
+                doorPivot.add(doorMesh);
+                gateGroup.add(doorPivot);
+
+                const reader = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.25, 0.35, 0.15),
+                    new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: 0xef4444, emissiveIntensity: 0.5 })
+                );
+                reader.position.set(1.5, 1.5, 0.1);
+                gateGroup.add(reader);
+
+                gateGroup.position.set(0, 0, -32);
+                this.scene.add(gateGroup);
+
+                const gateBBox = new THREE.Box3().setFromObject(gateGroup);
+                this.colliders.push(gateBBox);
+
+                this.interactables.push({
+                    mesh: doorMesh,
+                    name: "야외 비상 탈출구 문",
+                    action: () => {
+                        if (STATE.exitDoorUnlocked) return;
+                        if (!STATE.hasMasterKey) {
+                            showToast("보안 키카드가 필요합니다! 보안실에서 키카드를 획득하세요.");
+                            return;
+                        }
+                        STATE.exitDoorUnlocked = true;
+                        audio.playDoor();
+                        // Swing open pivoting on right side hinge
+                        doorPivot.rotation.y = Math.PI / 1.8;
+                        reader.material.emissive.setHex(0x22c55e);
+                        const idx = this.colliders.indexOf(gateBBox);
+                        if (idx !== -1) this.colliders.splice(idx, 1);
+                        showToast("비상문이 열렸습니다! 야외 운동장의 감시탑 서치라이트를 피해 담장으로 달아나세요.");
+                        updateHUDObjective("최종 담장 탈출", "감시탑 서치라이트를 숙여서[C] 피하고, 화물 상자에 엄폐하여 담장(Z=-83)으로 탈출하세요!");
+                    }
+                });
+            }
+
+            buildOutdoorYard(wallMat) {
+                const yardMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.9 });
+                const yardFloor = new THREE.Mesh(new THREE.PlaneGeometry(30, 52), yardMat);
+                yardFloor.rotation.x = -Math.PI / 2;
+                yardFloor.position.set(0, -0.01, -59.5);
+                this.scene.add(yardFloor);
+
+                this.createWall(-15, 3.0, -59.5, 0.4, 6.0, 52, wallMat);
+                this.createWall(15, 3.0, -59.5, 0.4, 6.0, 52, wallMat);
+                this.createWall(0, 3.0, -85.5, 30.4, 6.0, 0.4, wallMat);
+
+                const towerMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 });
+                const towerPillars = new THREE.Mesh(new THREE.BoxGeometry(2.0, 10.0, 2.0), towerMat);
+                towerPillars.position.set(0, 5.0, -58);
+                this.scene.add(towerPillars);
+
+                const towerCabin = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.5, 3.5), towerMat);
+                towerCabin.position.set(0, 11.25, -58);
+                this.scene.add(towerCabin);
+
+                const searchlight = new THREE.SpotLight(0xfef08a, 4.0, 45, Math.PI / 7, 0.4, 1.0);
+                searchlight.position.set(0, 11.0, -58);
+                const searchTarget = new THREE.Object3D();
+                searchTarget.position.set(0, 0, -45);
+                this.scene.add(searchTarget);
+                searchlight.target = searchTarget;
+                this.scene.add(searchlight);
+                this.watchtowerSpot = searchlight;
+                this.watchtowerTarget = searchTarget;
+
+                // Cover Crates
+                const crateMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+                const cratePositions = [
+                    { x: -4, z: -46, w: 2, h: 1.6, d: 2 },
+                    { x: 5, z: -52, w: 2.5, h: 1.8, d: 2 },
+                    { x: -3, z: -62, w: 3, h: 2.0, d: 2 },
+                    { x: 4, z: -70, w: 2.2, h: 1.6, d: 2.2 }
+                ];
+                cratePositions.forEach(pos => {
+                    const crate = new THREE.Mesh(new THREE.BoxGeometry(pos.w, pos.h, pos.d), crateMat);
+                    crate.position.set(pos.x, pos.h / 2, pos.z);
+                    this.scene.add(crate);
+                    this.colliders.push(new THREE.Box3().setFromObject(crate));
+                });
+            }
+
+            createCamera(x, y, z, rotY) {
+                const group = new THREE.Group();
+                const camMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 });
+                const lensMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+
+                const base = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), camMat);
+                const body = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.4, 12), camMat);
+                body.rotation.x = Math.PI / 3;
+                body.position.set(0, -0.15, 0.2);
+
+                const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 12), lensMat);
+                lens.rotation.x = Math.PI / 3;
+                lens.position.set(0, -0.28, 0.35);
+
+                group.add(base, body, lens);
+                group.position.set(x, y, z);
+                group.rotation.y = rotY;
+                this.scene.add(group);
+
+                const spotLight = new THREE.SpotLight(0xef4444, 2.5, 14, Math.PI / 6, 0.5, 1.0);
+                spotLight.position.set(x, y, z);
+                const target = new THREE.Object3D();
+                target.position.set(x + Math.sin(rotY) * 6, 0, z + Math.cos(rotY) * 6);
+                this.scene.add(target);
+                spotLight.target = target;
+                this.scene.add(spotLight);
+
+                // 3D Volumetric Vision Cone for CCTV
+                const coneDist = Math.sqrt(y * y + 36);
+                const coneGeo = new THREE.ConeGeometry(2.5, coneDist, 16, 1, true);
+                coneGeo.rotateX(-Math.PI / 2);
+                coneGeo.translate(0, 0, coneDist / 2);
+                const coneMat = new THREE.MeshBasicMaterial({
+                    color: 0xef4444,
+                    transparent: true,
+                    opacity: 0.22,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+                const coneMesh = new THREE.Mesh(coneGeo, coneMat);
+                coneMesh.position.set(x, y, z);
+                coneMesh.lookAt(target.position);
+                this.scene.add(coneMesh);
+
+                this.cameras.push({ group, spotLight, target, coneMesh, baseRotY: rotY, timeOffset: Math.random() * 10 });
+            }
+        }
+
+        // --- THREE.JS INITIALIZATION & GAME ENGINE ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.035);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        const world = new PrisonWorld(scene);
+
+        // Player Controls Object
+        const player = {
+            pos: new THREE.Vector3(-4.5, CONFIG.playerHeight, 25.5),
+            posY: 0,
+            vy: 0,
+            isGrounded: true,
+            velocity: new THREE.Vector3(),
+            pitch: 0,
+            yaw: Math.PI / 2,
+            radius: 0.35,
+            height: CONFIG.playerHeight
+        };
+
+        const flashlight = new THREE.SpotLight(0xffffff, 0, 18, Math.PI / 5, 0.3, 0.9);
+        scene.add(flashlight);
+        scene.add(flashlight.target);
+
+        const raycaster = new THREE.Raycaster();
+        const keys = {};
+
+        // Helper UI functions
+        let toastTimer = null;
+        function showToast(msg) {
+            const el = document.getElementById('toast-msg');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { el.classList.add('hidden'); }, 3500);
+        }
+
+        function updateHUDObjective(title, desc) {
+            document.getElementById('current-objective-title').textContent = title;
+            document.getElementById('current-objective-desc').textContent = desc;
+        }
+
+        function updateInventoryUI() {
+            const container = document.getElementById('inventory-list');
+            container.innerHTML = '';
+            if (STATE.inventory.length === 0) {
+                container.innerHTML = `<div class="w-10 h-10 border border-dashed border-slate-700 rounded-lg flex items-center justify-center text-slate-600 text-xs">비어있음</div>`;
+                return;
+            }
+            STATE.inventory.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "px-3 py-1.5 bg-sky-950/80 border border-sky-500/50 rounded-lg text-sky-300 font-bold text-xs flex items-center space-x-1 shadow-md";
+                itemDiv.innerHTML = `<i class="fa-solid fa-key text-amber-400"></i> <span>${item}</span>`;
+                container.appendChild(itemDiv);
+            });
+        }
+
+        function updateCameraRotation() {
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = player.yaw;
+            camera.rotation.x = player.pitch;
+        }
+
+        function triggerArrest() {
+            if (STATE.isCapturing) return;
+            STATE.isCapturing = true;
+            STATE.captureStage = 1;
+            STATE.captureTimer = 0;
+            STATE.cuffSoundPlayed = false;
+            STATE.beltSoundPlayed = false;
+            STATE.tightenSoundPlayed = false;
+
+            // 점프 중 발각되어도 즉시 바닥 지면에 정지하도록 위치 고정
+            player.posY = 0;
+            player.vy = 0;
+            player.isGrounded = true;
+            world.spawnArrestGuard(player.pos);
+            showToast("교도관에게 체포당하는 중...");
+            document.exitPointerLock();
+        }
+
+        // Key Listeners
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+
+            if (e.code === 'KeyF' && STATE.isPlaying && !STATE.isCapturing) {
+                STATE.flashlightOn = !STATE.flashlightOn;
+                flashlight.intensity = STATE.flashlightOn ? 2.5 : 0;
+                audio.playPickup();
+            }
+
+            if (e.code === 'KeyE' && STATE.isPlaying && !STATE.isCapturing) {
+                performInteraction();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+        window.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === document.body && STATE.isPlaying && !STATE.isCapturing) {
+                player.yaw -= e.movementX * 0.0022;
+                player.pitch -= e.movementY * 0.0022;
+                player.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, player.pitch));
+                updateCameraRotation();
+            }
+        });
+
+        // Pointer Lock & Pause Handler
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === document.body) {
+                document.getElementById('pause-overlay').classList.add('hidden');
+            } else {
+                if (STATE.isPlaying && !STATE.isCapturing && STATE.detectionStrikes < 2) {
+                    document.getElementById('pause-overlay').classList.remove('hidden');
+                }
+            }
+        });
+
+        document.addEventListener('click', () => {
+            if (STATE.isPlaying && !STATE.isCapturing && document.pointerLockElement !== document.body) {
+                document.body.requestPointerLock().catch(() => {});
+            }
+        });
+
+        function performInteraction() {
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(world.interactables.map(i => i.mesh), true);
+            if (intersects.length > 0 && intersects[0].distance <= CONFIG.interactDist) {
+                const targetMesh = intersects[0].object;
+                const found = world.interactables.find(i => i.mesh === targetMesh || i.mesh.children.includes(targetMesh));
+                if (found && found.action) found.action();
+            }
+        }
+
+        // Collision Check Algorithm
+        function checkCollisions(newPos) {
+            const playerBox = new THREE.Box3(
+                new THREE.Vector3(newPos.x - player.radius, 0.1, newPos.z - player.radius),
+                new THREE.Vector3(newPos.x + player.radius, player.height, newPos.z + player.radius)
+            );
+            for (let box of world.colliders) {
+                if (playerBox.intersectsBox(box)) return true;
+            }
+            return false;
+        }
+
+        // Start Button Handler
+        const startBtn = document.getElementById('start-btn');
+        if (startBtn) {
+            startBtn.addEventListener('click', () => {
+                audio.init();
+                document.body.requestPointerLock().catch(() => {});
+                document.getElementById('menu-overlay').classList.add('hidden');
+                document.getElementById('hud-layer').classList.remove('hidden');
+                STATE.isPlaying = true;
+            });
+        }
+
+        // Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- MAIN GAME ANIMATION LOOP ---
+        let lastTime = performance.now();
+
+        function animate(timestamp) {
+            const delta = Math.min((timestamp - lastTime) / 1000, 0.1);
+            lastTime = timestamp;
+
+            if (STATE.isPlaying && !STATE.isCapturing) {
+                // Movement & Jump Logic
+                STATE.isCrouching = keys['KeyC'] || keys['ControlLeft'];
+                const targetHeight = STATE.isCrouching ? CONFIG.crouchHeight : CONFIG.playerHeight;
+                player.height += (targetHeight - player.height) * 0.15;
+
+                // Jump handling
+                if (keys['Space'] && player.isGrounded && !STATE.isCrouching) {
+                    player.vy = 5.8;
+                    player.isGrounded = false;
+                    audio.playStep();
+                }
+
+                if (!player.isGrounded) {
+                    player.vy -= 16.0 * delta;
+                    player.posY += player.vy * delta;
+                    if (player.posY <= 0) {
+                        player.posY = 0;
+                        player.vy = 0;
+                        player.isGrounded = true;
+                    }
+                }
+
+                let moveSpeed = CONFIG.speed;
+                if (STATE.isCrouching) moveSpeed = CONFIG.crouchSpeed;
+                else if (keys['ShiftLeft']) moveSpeed = CONFIG.sprintSpeed;
+
+                const moveVector = new THREE.Vector3();
+                if (keys['KeyW']) moveVector.z -= 1;
+                if (keys['KeyS']) moveVector.z += 1;
+                if (keys['KeyA']) moveVector.x -= 1;
+                if (keys['KeyD']) moveVector.x += 1;
+
+                if (moveVector.lengthSq() > 0) {
+                    moveVector.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
+                    const nextX = player.pos.x + moveVector.x * moveSpeed * delta;
+                    const nextZ = player.pos.z + moveVector.z * moveSpeed * delta;
+
+                    // Sliding collision handling
+                    if (!checkCollisions(new THREE.Vector3(nextX, player.posY + player.height, player.pos.z))) player.pos.x = nextX;
+                    if (!checkCollisions(new THREE.Vector3(player.pos.x, player.posY + player.height, nextZ))) player.pos.z = nextZ;
+
+                    if (player.isGrounded && Math.random() < 0.04) audio.playStep();
+                }
+
+                camera.position.set(player.pos.x, player.posY + player.height, player.pos.z);
+                updateCameraRotation();
+
+                flashlight.position.copy(camera.position);
+                const flashDir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+                flashlight.target.position.copy(camera.position).add(flashDir);
+
+                // Inmate Walking Pacing Animation
+                world.inmates.forEach(item => {
+                    item.timer -= delta;
+                    if (item.timer <= 0) {
+                        item.timer = 4 + Math.random() * 4;
+                        item.targetPos.set(
+                            item.basePos.x + (Math.random() - 0.5) * 1.5,
+                            0,
+                            item.basePos.z + (Math.random() - 0.5) * 1.8
+                        );
+                    }
+                    item.meshGroup.group.position.lerp(item.targetPos, delta * 1.2);
+                    const walkCycle = Math.sin(timestamp * 0.006);
+                    item.meshGroup.leftLegGroup.rotation.x = walkCycle * 0.4;
+                    item.meshGroup.rightLegGroup.rotation.x = -walkCycle * 0.4;
+                });
+
+                // CCTV Camera Oscillations & Detection
+                let inLightBeam = false;
+                world.cameras.forEach(cam => {
+                    const angle = Math.sin((timestamp * 0.001) + cam.timeOffset) * (Math.PI / 4);
+                    cam.group.rotation.y = cam.baseRotY + angle;
+                    cam.target.position.set(
+                        cam.group.position.x + Math.sin(cam.group.rotation.y) * 6,
+                        0,
+                        cam.group.position.z + Math.cos(cam.group.rotation.y) * 6
+                    );
+                    if (cam.coneMesh) {
+                        cam.coneMesh.lookAt(cam.target.position);
+                    }
+                    if (player.pos.z > -32) {
+                        // Precise 3D Volumetric Vision Cone Collision Check
+                        const camPos = cam.group.position;
+                        const targetPos = cam.target.position;
+                        
+                        const vX = targetPos.x - camPos.x;
+                        const vY = targetPos.y - camPos.y;
+                        const vZ = targetPos.z - camPos.z;
+                        const vLenSq = vX * vX + vY * vY + vZ * vZ;
+                        
+                        const pX = player.pos.x - camPos.x;
+                        const pY = (player.posY + player.height * 0.5) - camPos.y;
+                        const pZ = player.pos.z - camPos.z;
+                        
+                        const t = Math.max(0, Math.min(1, (pX * vX + pY * vY + pZ * vZ) / vLenSq));
+                        
+                        const projX = camPos.x + t * vX;
+                        const projY = camPos.y + t * vY;
+                        const projZ = camPos.z + t * vZ;
+                        
+                        const distToLine = Math.sqrt(
+                            (player.pos.x - projX) ** 2 +
+                            ((player.posY + player.height * 0.5) - projY) ** 2 +
+                            (player.pos.z - projZ) ** 2
+                        );
+                        
+                        const coneRadiusAtT = t * 2.5 + 0.45;
+                        if (distToLine <= coneRadiusAtT) {
+                            inLightBeam = true;
+                        }
+                    }
+                });
+
+                // Outdoor Watchtower Searchlight Sweep & Detection (Z <= -32)
+                if (world.watchtowerTarget) {
+                    const sweepX = Math.sin(timestamp * 0.0012) * 12;
+                    const sweepZ = -45 + Math.cos(timestamp * 0.0008) * 18;
+                    world.watchtowerTarget.position.set(sweepX, 0, sweepZ);
+
+                    if (player.pos.z <= -34.5 && player.pos.z > -80) {
+                        const distToSpot = new THREE.Vector2(player.pos.x, player.pos.z).distanceTo(
+                            new THREE.Vector2(sweepX, sweepZ)
+                        );
+                        const detectThreshold = STATE.isCrouching ? 2.2 : 4.5;
+                        if (distToSpot < detectThreshold) inLightBeam = true;
+                    }
+                }
+
+                // Alert Level Management (No decay over time)
+                const alertBarEl = document.getElementById('alert-bar');
+                const stealthTextEl = document.getElementById('stealth-text');
+                const stealthIconEl = document.getElementById('stealth-icon');
+
+                if (inLightBeam) {
+                    STATE.alertLevel += CONFIG.alertRate * delta;
+                    if (STATE.alertLevel >= 100) {
+                        STATE.alertLevel = 0;
+                        STATE.detectionStrikes++;
+                        if (STATE.detectionStrikes === 1) {
+                            showToast("[경고 1/2] CCTV 감시망에 노출되었습니다! (1회 더 걸리면 체포당함)");
+                            stealthTextEl.textContent = "경고 (발각 1/2)";
+                            stealthTextEl.className = "text-xs font-semibold text-amber-400";
+                            stealthIconEl.className = "fa-solid fa-triangle-exclamation text-amber-400 text-xs";
+                            alertBarEl.className = "bg-amber-500 h-full w-full transition-all duration-200";
+                        } else if (STATE.detectionStrikes >= 2) {
+                            triggerArrest();
+                        }
+                    }
+                }
+                if (STATE.detectionStrikes < 1) {
+                    alertBarEl.style.width = `${STATE.alertLevel}%`;
+                }
+
+                // Win Condition: Reached Perimeter Wall in Outdoor Yard (Z <= -83)
+                if (player.pos.z <= -83) {
+                    STATE.isPlaying = false;
+                    document.exitPointerLock();
+                    document.getElementById('win-overlay').classList.remove('hidden');
+                    document.getElementById('hud-layer').classList.add('hidden');
+                }
+
+                // Interaction Crosshair Target Hover Check
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                const intersects = raycaster.intersectObjects(world.interactables.map(i => i.mesh), true);
+                const crosshairEl = document.getElementById('crosshair');
+                const promptEl = document.getElementById('interaction-prompt');
+
+                if (intersects.length > 0 && intersects[0].distance <= CONFIG.interactDist) {
+                    crosshairEl.classList.add('interactable');
+                    const targetMesh = intersects[0].object;
+                    const found = world.interactables.find(i => i.mesh === targetMesh || i.mesh.children.includes(targetMesh));
+                    if (found) {
+                        promptEl.textContent = `[E] ${found.name}`;
+                        promptEl.classList.remove('hidden');
+                    }
+                } else {
+                    crosshairEl.classList.remove('interactable');
+                    promptEl.classList.add('hidden');
+                }
+            }
+
+            // Arrest Animation Cutscene Sequence
+            if (STATE.isCapturing) {
+                STATE.captureTimer += delta;
+                const t = STATE.captureTimer;
+                
+                // 체포 컷씬 진행 중 플레이어 바닥 고정 유지
+                player.posY = 0;
+                player.vy = 0;
+                player.isGrounded = true;
+
+                if (world.guardNPC) {
+                    const guardGroup = world.guardNPC.group;
+                    const guardPos = guardGroup.position;
+
+                    // Display 3D Player Character Body facing front towards guard
+                    if (world.playerBodyGroup) {
+                        world.playerBodyGroup.group.position.set(player.pos.x, 0, player.pos.z);
+                        world.playerBodyGroup.group.rotation.y = player.yaw + Math.PI;
+                        world.playerBodyGroup.group.visible = true;
+                    }
+
+                    // Vectors based on player view
+                    const forwardDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
+
+                    // Target arrest point directly in front of player
+                    const targetPos = player.pos.clone().add(forwardDir.clone().multiplyScalar(0.75));
+                    targetPos.y = 0;
+
+                    const dist = guardPos.distanceTo(targetPos);
+                    const runCycle = Math.sin(timestamp * 0.018);
+
+                    if (dist > 0.1) {
+                        // Guard running animation toward player
+                        guardPos.lerp(targetPos, delta * 2.2);
+                        world.guardNPC.leftLegGroup.rotation.x = runCycle * 0.75;
+                        world.guardNPC.rightLegGroup.rotation.x = -runCycle * 0.75;
+                        world.guardNPC.leftArmGroup.rotation.x = -runCycle * 0.75;
+                        world.guardNPC.rightArmGroup.rotation.x = runCycle * 0.75;
+                        guardGroup.lookAt(player.pos.x, 0, player.pos.z);
+                    } else {
+                        // Guard reaches player & positions hands for binding
+                        world.guardNPC.leftLegGroup.rotation.x = 0;
+                        world.guardNPC.rightLegGroup.rotation.x = 0;
+                        guardGroup.lookAt(player.pos.x, 0, player.pos.z);
+                    }
+
+                    // 1. Inmate Arm Bringing Together Animation (모으기 모션)
+                    const armProgress = Math.min(1, Math.max(0, (t - 1.2) / 1.0));
+                    if (world.playerBodyGroup) {
+                        world.playerBodyGroup.leftArmGroup.rotation.x = (-Math.PI / 3.2) * armProgress;
+                        world.playerBodyGroup.leftArmGroup.rotation.y = (Math.PI / 6) * armProgress;
+                        world.playerBodyGroup.rightArmGroup.rotation.x = (-Math.PI / 3.2) * armProgress;
+                        world.playerBodyGroup.rightArmGroup.rotation.y = (-Math.PI / 6) * armProgress;
+                    }
+
+                    // 2. Handcuff Attachment Motion (수갑 착용 애니메이션)
+                    if (t >= 2.0 && t < 3.3) {
+                        world.guardNPC.leftArmGroup.rotation.x = -Math.PI / 2.3;
+                        world.guardNPC.rightArmGroup.rotation.x = -Math.PI / 2.3;
+                    }
+
+                    if (t >= 2.2) {
+                        if (world.restraintProps) world.restraintProps.visible = true;
+                        if (world.cuffGroup) {
+                            world.cuffGroup.visible = true;
+                            const cuffProgress = Math.min(1, (t - 2.2) / 0.6);
+                            // Scale & slide handcuffs onto wrists from guard's hands
+                            world.cuffGroup.scale.set(cuffProgress, cuffProgress, cuffProgress);
+                            world.cuffGroup.position.z = 0.45 * (1 - cuffProgress);
+                        }
+                        if (!STATE.cuffSoundPlayed && t >= 2.6) {
+                            STATE.cuffSoundPlayed = true;
+                            audio.playCuff();
+                        }
+                    }
+
+                    // 3. Waist Belt & Arm Strap Wrapping Motion (포승 벨트 결박 모션)
+                    if (t >= 3.3) {
+                        // Guard moves hands to inmate's waist
+                        world.guardNPC.leftArmGroup.rotation.x = -Math.PI / 3.5 + Math.sin(t * 12) * 0.05;
+                        world.guardNPC.rightArmGroup.rotation.x = -Math.PI / 3.5 - Math.sin(t * 12) * 0.05;
+
+                        const wrapProgress = Math.min(1, (t - 3.3) / 0.8);
+                        if (world.beltGroup) {
+                            world.beltGroup.visible = true;
+                            world.beltGroup.scale.set(wrapProgress, 1, wrapProgress);
+                        }
+                        if (world.strapGroup) {
+                            world.strapGroup.visible = true;
+                            world.strapGroup.scale.set(wrapProgress, 1, wrapProgress);
+                        }
+
+                        if (!STATE.beltSoundPlayed && t >= 3.8) {
+                            STATE.beltSoundPlayed = true;
+                            audio.playCuff();
+                        }
+                    }
+
+                    // 4. Tightening & Pulling Motion (포승 조이기 및 최종 체포 마무리)
+                    if (t >= 4.4) {
+                        const pullPhase = Math.sin((t - 4.4) * 8);
+                        if (t < 5.2 && world.playerBodyGroup) {
+                            world.playerBodyGroup.group.rotation.x = -0.06 * Math.max(0, pullPhase);
+                        } else if (world.playerBodyGroup) {
+                            world.playerBodyGroup.group.rotation.x = 0;
+                        }
+
+                        if (!STATE.tightenSoundPlayed && t >= 4.5) {
+                            STATE.tightenSoundPlayed = true;
+                            audio.playCuff();
+                        }
+                    }
+
+                    // Cinematic camera focusing on inmate's front
+                    const frontDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
+                    const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
+                    
+                    const camPos = player.pos.clone()
+                        .add(frontDir.clone().multiplyScalar(1.8))
+                        .add(rightDir.clone().multiplyScalar(0.85));
+                    camPos.y = 1.3 + Math.sin(STATE.captureTimer * 0.4) * 0.03;
+
+                    camera.position.copy(camPos);
+                    const lookTarget = player.pos.clone();
+                    lookTarget.y = 1.10; // Target inmate's chest & badge area
+                    camera.lookAt(lookTarget);
+
+                    // Transition to Courtroom Trial Modal
+                    if (STATE.captureTimer > 6.2 && STATE.captureStage < 3) {
+                        STATE.captureStage = 3;
+                        document.getElementById('trial-overlay').classList.remove('hidden');
+                        document.getElementById('hud-layer').classList.add('hidden');
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        // Start Loop
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>
